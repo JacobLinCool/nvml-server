@@ -9,7 +9,7 @@ async fn main() {
 
     let app = Router::new()
         .route("/", get(routes::root))
-        .route("/gpu", get(routes::gpu::gpu));
+        .route("/stats", get(routes::stats::stats));
 
     let port = std::env::var("PORT").unwrap_or_else(|_| "21005".to_string());
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port))

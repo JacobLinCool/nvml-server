@@ -2,6 +2,8 @@
 
 This is a simple server that uses the [NVIDIA Management Library (NVML)](https://developer.nvidia.com/nvidia-management-library-nvml) to expose GPU metrics over a REST API.
 
+The pre-built binary is available in the [releases](https://github.com/JacobLinCool/nvml-server/releases) page.
+
 ## Building
 
 ```bash

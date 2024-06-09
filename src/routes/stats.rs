@@ -21,7 +21,7 @@ static STATS_CACHE: Lazy<Mutex<Option<Stats>>> = Lazy::new(|| Mutex::new(None));
 
 pub async fn stats() -> Result<Json<Stats>, AppError> {
     let now = Instant::now();
-    let last_update = LAST_UPDATE.lock().unwrap();
+    let mut last_update = LAST_UPDATE.lock().unwrap();
     if now.duration_since(*last_update) < Duration::from_secs(1) {
         if let Some(stats) = STATS_CACHE.lock().unwrap().as_ref() {
             return Ok(Json(stats.clone()));
@@ -103,7 +103,7 @@ pub async fn stats() -> Result<Json<Stats>, AppError> {
     }
 
     let stats = Stats { gpus, processes };
-    *LAST_UPDATE.lock().unwrap() = now;
+    *last_update = now;
     *STATS_CACHE.lock().unwrap() = Some(stats.clone());
     Ok(Json(stats))
 }

@@ -21,7 +21,7 @@ pub async fn stats() -> Result<Json<Stats>, AppError> {
     let device_count = nvml.device_count()?;
 
     let mut gpus = Vec::with_capacity(device_count as usize);
-    let mut processes = Vec::new();
+    let mut processes = Vec::<Process>::new();
 
     for i in 0..device_count {
         let device = nvml.device_by_index(i)?;
@@ -42,33 +42,48 @@ pub async fn stats() -> Result<Json<Stats>, AppError> {
 
         let running_processes = device.running_compute_processes()?;
         for process in running_processes {
-            let mut name = String::new();
-            let mut user = String::new();
-            let mut run_time = 0;
-            let mut cpu_usage = 0.0;
+            if let Some(p) = processes.iter_mut().find(|p| p.pid == process.pid) {
+                p.gpus.push(ProcessGpu {
+                    uuid: uuid.clone(),
+                    memory: match process.used_gpu_memory {
+                        UsedGpuMemory::Unavailable => 0,
+                        UsedGpuMemory::Used(x) => x,
+                    },
+                });
+            } else {
+                let mut name = String::new();
+                let mut user = String::new();
+                let mut run_time = 0;
+                let mut cpu_usage = 0.0;
 
-            if let Some(p) = system.process(Pid::from_u32(process.pid)) {
-                name = p.name().to_string();
+                if let Some(p) = system.process(Pid::from_u32(process.pid)) {
+                    name = p.name().to_string();
 
-                if let Some(uid) = p.user_id() {
-                    if let Some(u) = users.get_user_by_id(uid) {
-                        user = u.name().to_string();
+                    if let Some(uid) = p.user_id() {
+                        if let Some(u) = users.get_user_by_id(uid) {
+                            user = u.name().to_string();
+                        }
                     }
+
+                    run_time = p.run_time();
+                    cpu_usage = p.cpu_usage();
                 }
 
-                run_time = p.run_time();
-                cpu_usage = p.cpu_usage();
+                processes.push(Process {
+                    pid: process.pid,
+                    name,
+                    user,
+                    run_time,
+                    cpu_usage,
+                    gpus: vec![ProcessGpu {
+                        uuid: uuid.clone(),
+                        memory: match process.used_gpu_memory {
+                            UsedGpuMemory::Unavailable => 0,
+                            UsedGpuMemory::Used(x) => x,
+                        },
+                    }],
+                });
             }
-
-            processes.push(Process {
-                pid: process.pid,
-                name,
-                user,
-                run_time,
-                cpu_usage,
-                gpu_uuid: uuid.clone(),
-                gpu_memory_usage: process.used_gpu_memory,
-            });
         }
     }
 
@@ -91,8 +106,13 @@ pub struct Process {
     pub user: String,
     pub run_time: u64,
     pub cpu_usage: f32,
-    pub gpu_uuid: String,
-    pub gpu_memory_usage: UsedGpuMemory,
+    pub gpus: Vec<ProcessGpu>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ProcessGpu {
+    pub uuid: String,
+    pub memory: u64,
 }
 
 #[derive(Serialize, Deserialize)]

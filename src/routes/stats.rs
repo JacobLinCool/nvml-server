@@ -66,13 +66,13 @@ pub async fn stats() -> Result<Json<Stats>, AppError> {
                     },
                 });
             } else {
-                let mut name = String::new();
+                let mut cmd = Vec::new();
                 let mut user = String::new();
                 let mut run_time = 0;
                 let mut cpu_usage = 0.0;
 
                 if let Some(p) = system.process(Pid::from_u32(process.pid)) {
-                    name = p.name().to_string();
+                    cmd = p.cmd().to_owned();
 
                     if let Some(uid) = p.user_id() {
                         if let Some(u) = users.get_user_by_id(uid) {
@@ -86,7 +86,7 @@ pub async fn stats() -> Result<Json<Stats>, AppError> {
 
                 processes.push(Process {
                     pid: process.pid,
-                    name,
+                    cmd,
                     user,
                     run_time,
                     cpu_usage,
@@ -120,7 +120,7 @@ pub struct Gpu {
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Process {
     pub pid: u32,
-    pub name: String,
+    pub cmd: Vec<String>,
     pub user: String,
     pub run_time: u64,
     pub cpu_usage: f32,

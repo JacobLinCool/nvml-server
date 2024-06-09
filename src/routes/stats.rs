@@ -1,3 +1,7 @@
+use std::ops::Sub;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
 use crate::error::AppError;
 use axum::Json;
 use nvml_wrapper::{
@@ -5,17 +9,28 @@ use nvml_wrapper::{
     struct_wrappers::device::{MemoryInfo, Utilization},
     Nvml,
 };
-use once_cell::sync::OnceCell;
+use once_cell::sync::{Lazy, OnceCell};
 use serde::{Deserialize, Serialize};
 use sysinfo::{Pid, System, Users};
 
 static NVML: OnceCell<Nvml> = OnceCell::new();
-static SYSTEM: OnceCell<System> = OnceCell::new();
+static SYSTEM: Lazy<Mutex<System>> = Lazy::new(|| Mutex::new(System::new_all()));
+static LAST_UPDATE: Lazy<Mutex<Instant>> =
+    Lazy::new(|| Mutex::new(Instant::now().sub(Duration::from_secs(1))));
+static STATS_CACHE: Lazy<Mutex<Option<Stats>>> = Lazy::new(|| Mutex::new(None));
 
 pub async fn stats() -> Result<Json<Stats>, AppError> {
+    let now = Instant::now();
+    let last_update = LAST_UPDATE.lock().unwrap();
+    if now.duration_since(*last_update) < Duration::from_secs(1) {
+        if let Some(stats) = STATS_CACHE.lock().unwrap().as_ref() {
+            return Ok(Json(stats.clone()));
+        }
+    }
+
     let nvml = NVML.get_or_try_init(Nvml::init)?;
-    let system =
-        SYSTEM.get_or_try_init(|| Ok::<sysinfo::System, anyhow::Error>(System::new_all()))?;
+    let mut system = SYSTEM.lock().unwrap();
+    system.refresh_all();
     let users = Users::new_with_refreshed_list();
 
     let device_count = nvml.device_count()?;
@@ -87,10 +102,13 @@ pub async fn stats() -> Result<Json<Stats>, AppError> {
         }
     }
 
-    Ok(Json(Stats { gpus, processes }))
+    let stats = Stats { gpus, processes };
+    *LAST_UPDATE.lock().unwrap() = now;
+    *STATS_CACHE.lock().unwrap() = Some(stats.clone());
+    Ok(Json(stats))
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Gpu {
     pub uuid: String,
     pub name: String,
@@ -99,7 +117,7 @@ pub struct Gpu {
     pub utilization: Utilization,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Process {
     pub pid: u32,
     pub name: String,
@@ -109,13 +127,13 @@ pub struct Process {
     pub gpus: Vec<ProcessGpu>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct ProcessGpu {
     pub uuid: String,
     pub memory: u64,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Stats {
     pub gpus: Vec<Gpu>,
     pub processes: Vec<Process>,
